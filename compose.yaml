@@ -1,0 +1,77 @@
+name: "${COMPOSE_PROJECT_NAME}"
+
+#######################################
+########## Description ################
+#
+# ----- CORE PORTAINER LOCAL -----
+# Панель управления Docker
+#
+#######################################
+
+############################
+########## ANCHORS #########
+x-logging: &default_logging
+  driver: "local"
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+x-security: &default_security
+  cap_drop:
+    - ALL
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+
+####################################
+########## SETUP SERVICES ##########
+services:
+
+  #--------- PORTAINER CE - Веб-интерфейс ---------#
+  portainer:
+    image: ${PORTAINER_IMAGE}
+    container_name: ${COMPOSE_PROJECT_NAME}-app
+    <<: *default_security
+    cpu_shares: 512
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+          pids: 100
+        reservations:
+          cpus: '0.10'
+          memory: 64M
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    volumes:
+      - portainer_data:/data
+      # Прямое подключение к сокету с правами записи (rw) для управления хостом
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+    logging: *default_logging
+    networks:
+      - web_net
+    ports:
+      - "${HOST_IP:?Не задан HOST_IP в файле .env}:${PORTAINER_HTTPS_PORT:-9443}:9443"
+    restart: unless-stopped
+    healthcheck:
+      # Проверяем HTTP-порт, Portainer слушает 9443 (HTTPS) и 9000 (HTTP)
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:9000/api/system/status"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+###################################
+########## SETUP VOLUMES ##########
+volumes:
+  portainer_data:
+    name: ${COMPOSE_PROJECT_NAME}_data
+
+###################################
+########## SETUP NETWORKS #########
+networks:
+  # Сеть для публикации веб-интерфейса Portainer
+  web_net:
+    name: ${COMPOSE_PROJECT_NAME}_web_net
+    driver: bridge
